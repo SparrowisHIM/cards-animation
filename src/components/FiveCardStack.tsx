@@ -67,8 +67,14 @@ const dragSnapTransition = {
   bounceDamping: 32,
 };
 
+const backFrameGradientClass =
+  "bg-[linear-gradient(135deg,#f7f7f7_0%,#8d8d8d_48%,#050505_100%)]";
 const dragReturnThreshold = 140;
 const returnEase: Transition["ease"] = [0.22, 1, 0.36, 1];
+const backGlowTransition: Transition = {
+  duration: 0.3,
+  ease: returnEase,
+};
 
 const wait = (duration: number) =>
   new Promise((resolve) => {
@@ -381,9 +387,9 @@ function getFlipTransition(phase: FlipPhase): Transition {
 function getBackGlowOpacity(phase: FlipPhase) {
   switch (phase) {
     case "showingBackFace":
-      return 0.82;
+      return 0.56;
     case "settlingIntoBack":
-      return 0.22;
+      return 0.12;
     default:
       return 0;
   }
@@ -394,9 +400,31 @@ function getBackGlowScale(phase: FlipPhase) {
     case "showingBackFace":
       return 1;
     case "settlingIntoBack":
-      return 0.96;
+      return 0.985;
     default:
-      return 0.92;
+      return 0.96;
+  }
+}
+
+function getBackSurfaceGlowOpacity(phase: FlipPhase) {
+  switch (phase) {
+    case "showingBackFace":
+      return 0.34;
+    case "settlingIntoBack":
+      return 0.08;
+    default:
+      return 0;
+  }
+}
+
+function getBackEdgeGlowOpacity(phase: FlipPhase) {
+  switch (phase) {
+    case "showingBackFace":
+      return 0.42;
+    case "settlingIntoBack":
+      return 0.14;
+    default:
+      return 0;
   }
 }
 
@@ -573,6 +601,8 @@ function ProfileCard({
   const flipTransition = getFlipTransition(flipPhase);
   const backGlowOpacity = getBackGlowOpacity(flipPhase);
   const backGlowScale = getBackGlowScale(flipPhase);
+  const backSurfaceGlowOpacity = getBackSurfaceGlowOpacity(flipPhase);
+  const backEdgeGlowOpacity = getBackEdgeGlowOpacity(flipPhase);
 
   return (
     <motion.article
@@ -733,46 +763,50 @@ function ProfileCard({
 
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 isolate overflow-hidden rounded-[20px] bg-[#111111] shadow-card [backface-visibility:hidden] [transform:rotateY(180deg)]"
+          className="pointer-events-none absolute inset-0 isolate overflow-hidden rounded-[20px] shadow-card [backface-visibility:hidden] [transform:rotateY(180deg)]"
         >
-          <img
-            src="/card-back.png"
-            alt=""
-            className="relative z-0 h-full w-full object-cover"
-            draggable={false}
+          <div
+            className={[
+              "absolute inset-0 rounded-[20px]",
+              backFrameGradientClass,
+            ].join(" ")}
           />
+          <div className="relative z-0 h-full w-full p-[10px]">
+            <div className="relative h-full w-full overflow-hidden rounded-[10px]">
+              <img
+                src="/card-back.png"
+                alt=""
+                className="h-full w-full object-cover"
+                draggable={false}
+              />
+              <motion.span
+                className="absolute inset-0 rounded-[10px] bg-[radial-gradient(circle_at_50%_38%,rgba(255,255,255,0.24),rgba(255,255,255,0.08)_36%,rgba(255,255,255,0)_72%)]"
+                initial={false}
+                animate={{ opacity: backSurfaceGlowOpacity }}
+                transition={shouldReduceMotion ? { duration: 0 } : backGlowTransition}
+              />
+            </div>
+          </div>
           <motion.span
-            className="absolute inset-0 z-10 rounded-[20px] bg-[radial-gradient(circle_at_50%_36%,rgba(255,255,255,0.34),rgba(255,255,255,0.12)_34%,rgba(255,255,255,0)_72%)] blur-[10px]"
+            className="absolute inset-[2px] z-10 rounded-[18px] bg-[radial-gradient(circle_at_50%_34%,rgba(255,255,255,0.3),rgba(255,255,255,0.12)_32%,rgba(255,255,255,0)_74%)] blur-[14px]"
             initial={false}
             animate={{
               opacity: backGlowOpacity,
               scale: backGlowScale,
             }}
-            transition={
-              shouldReduceMotion
-                ? { duration: 0 }
-                : { duration: 0.28, ease: returnEase }
-            }
+            transition={shouldReduceMotion ? { duration: 0 } : backGlowTransition}
           />
           <motion.span
-            className="absolute inset-[1px] z-20 rounded-[19px] bg-[linear-gradient(145deg,rgba(255,255,255,0.2),rgba(255,255,255,0.04)_38%,rgba(0,0,0,0)_68%)]"
+            className="absolute inset-[1px] z-20 rounded-[19px] bg-[linear-gradient(145deg,rgba(255,255,255,0.14),rgba(255,255,255,0.04)_34%,rgba(0,0,0,0)_68%)]"
             initial={false}
-            animate={{ opacity: backGlowOpacity * 0.72 }}
-            transition={
-              shouldReduceMotion
-                ? { duration: 0 }
-                : { duration: 0.24, ease: returnEase }
-            }
+            animate={{ opacity: backEdgeGlowOpacity }}
+            transition={shouldReduceMotion ? { duration: 0 } : backGlowTransition}
           />
           <motion.span
-            className="absolute inset-0 z-30 rounded-[20px] shadow-[inset_0_0_34px_rgba(255,255,255,0.13),inset_0_0_1px_rgba(255,255,255,0.34)]"
+            className="absolute inset-0 z-30 rounded-[20px] shadow-[inset_0_0_24px_rgba(255,255,255,0.1),inset_0_0_1px_rgba(255,255,255,0.28)]"
             initial={false}
-            animate={{ opacity: backGlowOpacity * 0.9 }}
-            transition={
-              shouldReduceMotion
-                ? { duration: 0 }
-                : { duration: 0.3, ease: returnEase }
-            }
+            animate={{ opacity: backEdgeGlowOpacity }}
+            transition={shouldReduceMotion ? { duration: 0 } : backGlowTransition}
           />
         </div>
       </motion.div>
