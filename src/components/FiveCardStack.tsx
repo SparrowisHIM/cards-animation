@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+} from "react";
 import { motion, useReducedMotion, type PanInfo, type Transition } from "framer-motion";
 import { ArrowUpRight } from "lucide-react";
 import type { ProfileCardData } from "../data/cards";
@@ -6,6 +13,7 @@ import type { ProfileCardData } from "../data/cards";
 type FiveCardStackProps = {
   cards: ProfileCardData[];
   initialActiveIndex?: number;
+  isCompactViewport?: boolean;
 };
 
 type CardPosition = {
@@ -18,6 +26,9 @@ type CardPosition = {
   opacity: number;
   zIndex: number;
 };
+
+type LayoutMode = "clustered" | "spread";
+type LayoutTransitionDirection = "opening" | "closing";
 
 type FlipPhase =
   | "idle"
@@ -36,14 +47,86 @@ type FlipState = {
 type DragDirection = "left" | "right";
 
 const CARD_WIDTH = 361;
+const CLUSTERED_LAYOUT_X_OFFSETS = {
+  inner: 165,
+  outer: 300,
+};
+const CLUSTERED_LAYOUT_Y_OFFSETS = {
+  inner: 14,
+  outer: 44,
+};
+const CLUSTERED_LAYOUT_ROTATIONS = {
+  inner: 3,
+  outer: 8,
+};
 
-const CARD_POSITIONS: CardPosition[] = [
+const CARD_POSITIONS_SPREAD: CardPosition[] = [
   { name: "far-left", offset: -2, x: -575, y: 72, rotate: -18, scale: 0.9, opacity: 1, zIndex: 1 },
   { name: "left", offset: -1, x: -325, y: 28, rotate: -8, scale: 0.94, opacity: 1, zIndex: 2 },
   { name: "center", offset: 0, x: 0, y: 0, rotate: 0, scale: 1.04, opacity: 1, zIndex: 5 },
   { name: "right", offset: 1, x: 325, y: 28, rotate: 8, scale: 0.94, opacity: 1, zIndex: 2 },
   { name: "far-right", offset: 2, x: 575, y: 72, rotate: 18, scale: 0.9, opacity: 1, zIndex: 1 },
 ];
+
+const CARD_POSITIONS_CLUSTERED: CardPosition[] = [
+  {
+    name: "far-left",
+    offset: -2,
+    x: -CLUSTERED_LAYOUT_X_OFFSETS.outer,
+    y: CLUSTERED_LAYOUT_Y_OFFSETS.outer,
+    rotate: -CLUSTERED_LAYOUT_ROTATIONS.outer,
+    scale: 0.9,
+    opacity: 1,
+    zIndex: 1,
+  },
+  {
+    name: "left",
+    offset: -1,
+    x: -CLUSTERED_LAYOUT_X_OFFSETS.inner,
+    y: CLUSTERED_LAYOUT_Y_OFFSETS.inner,
+    rotate: -CLUSTERED_LAYOUT_ROTATIONS.inner,
+    scale: 0.94,
+    opacity: 1,
+    zIndex: 2,
+  },
+  { name: "center", offset: 0, x: 0, y: 0, rotate: 0, scale: 1.04, opacity: 1, zIndex: 5 },
+  {
+    name: "right",
+    offset: 1,
+    x: CLUSTERED_LAYOUT_X_OFFSETS.inner,
+    y: CLUSTERED_LAYOUT_Y_OFFSETS.inner,
+    rotate: CLUSTERED_LAYOUT_ROTATIONS.inner,
+    scale: 0.94,
+    opacity: 1,
+    zIndex: 2,
+  },
+  {
+    name: "far-right",
+    offset: 2,
+    x: CLUSTERED_LAYOUT_X_OFFSETS.outer,
+    y: CLUSTERED_LAYOUT_Y_OFFSETS.outer,
+    rotate: CLUSTERED_LAYOUT_ROTATIONS.outer,
+    scale: 0.9,
+    opacity: 1,
+    zIndex: 1,
+  },
+];
+
+const CARD_POSITIONS_BY_LAYOUT: Record<LayoutMode, CardPosition[]> = {
+  clustered: CARD_POSITIONS_CLUSTERED,
+  spread: CARD_POSITIONS_SPREAD,
+};
+
+/** Blocks layout toggle on double-click right after this card was promoted from inactive (same gesture). */
+const LAYOUT_TOGGLE_COOLDOWN_AFTER_PROMOTION_MS = 520;
+const LAYOUT_TRANSITION_STAGGER_S = 0.02;
+const LAYOUT_TRANSITION_LOCK_MS = 560;
+const layoutTransitionSpring: Transition = {
+  type: "spring",
+  stiffness: 220,
+  damping: 34,
+  mass: 1.02,
+};
 
 const cardSpring: Transition = {
   type: "spring",
@@ -69,6 +152,7 @@ const dragSnapTransition = {
 
 const backFrameGradientClass =
   "bg-[linear-gradient(135deg,#f7f7f7_0%,#8d8d8d_48%,#050505_100%)]";
+const cardBackImageSrc = `${import.meta.env.BASE_URL}card-back.png`;
 const dragReturnThreshold = 140;
 const returnEase: Transition["ease"] = [0.22, 1, 0.36, 1];
 const backGlowTransition: Transition = {
@@ -84,8 +168,13 @@ const wait = (duration: number) =>
 export function FiveCardStack({
   cards,
   initialActiveIndex = 2,
+  isCompactViewport = false,
 }: FiveCardStackProps) {
   const initialCards = useMemo(() => cards.slice(0, 5), [cards]);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>("clustered");
+  const [layoutTransitionDirection, setLayoutTransitionDirection] =
+    useState<LayoutTransitionDirection | null>(null);
+  const [isLayoutTransitioning, setIsLayoutTransitioning] = useState(false);
   const [orderedCards, setOrderedCards] = useState(initialCards);
   const [activeCardId, setActiveCardId] = useState(
     initialCards[initialActiveIndex]?.id ?? initialCards[0]?.id ?? "",
@@ -99,6 +188,10 @@ export function FiveCardStack({
   const [hoverResetToken, setHoverResetToken] = useState(0);
   const orderedCardsRef = useRef(initialCards);
   const sequenceToken = useRef(0);
+  const layoutTransitionTimeoutRef = useRef<number | null>(null);
+  const lastInactivePromotionRef = useRef<{ cardId: string; at: number } | null>(
+    null,
+  );
   const shouldReduceMotion = useReducedMotion() ?? false;
 
   const visibleCards = orderedCards;
@@ -106,9 +199,21 @@ export function FiveCardStack({
     0,
     visibleCards.findIndex((card) => card.id === activeCardId),
   );
+  const isSpreadMode = layoutMode === "spread";
   const isInteractionLocked =
     flipState.phase !== "idle" && flipState.phase !== "dragging";
+  const isGestureLocked =
+    isInteractionLocked ||
+    flipState.phase === "dragging" ||
+    isLayoutTransitioning;
   const transition = shouldReduceMotion ? { duration: 0 } : cardSpring;
+
+  const clearLayoutTransitionLock = () => {
+    if (layoutTransitionTimeoutRef.current !== null) {
+      window.clearTimeout(layoutTransitionTimeoutRef.current);
+      layoutTransitionTimeoutRef.current = null;
+    }
+  };
 
   useEffect(() => {
     orderedCardsRef.current = orderedCards;
@@ -117,6 +222,10 @@ export function FiveCardStack({
   useEffect(() => {
     orderedCardsRef.current = initialCards;
     sequenceToken.current += 1;
+    clearLayoutTransitionLock();
+    setLayoutMode("clustered");
+    setLayoutTransitionDirection(null);
+    setIsLayoutTransitioning(false);
     setFlipState({ phase: "idle", cardId: null, direction: null });
     setIsHoverSuppressed(false);
     setOrderedCards(initialCards);
@@ -131,6 +240,7 @@ export function FiveCardStack({
 
   useEffect(() => {
     return () => {
+      clearLayoutTransitionLock();
       sequenceToken.current += 1;
     };
   }, []);
@@ -190,15 +300,65 @@ export function FiveCardStack({
   };
 
   const handleSelectCard = (cardId: string) => {
-    if (isInteractionLocked) {
+    if (isGestureLocked) {
       return;
     }
 
-    setActiveCardId(cardId);
+    setActiveCardId((currentId) => {
+      if (cardId === currentId) {
+        return currentId;
+      }
+
+      lastInactivePromotionRef.current = { cardId, at: Date.now() };
+      return cardId;
+    });
+  };
+
+  const handleToggleLayoutMode = () => {
+    if (isGestureLocked) {
+      return;
+    }
+
+    const blockToggle =
+      lastInactivePromotionRef.current !== null &&
+      lastInactivePromotionRef.current.cardId === activeCardId &&
+      Date.now() - lastInactivePromotionRef.current.at <
+        LAYOUT_TOGGLE_COOLDOWN_AFTER_PROMOTION_MS;
+
+    if (blockToggle) {
+      return;
+    }
+
+    const nextLayoutMode = layoutMode === "clustered" ? "spread" : "clustered";
+    const nextTransitionDirection =
+      nextLayoutMode === "spread" ? "opening" : "closing";
+
+    clearLayoutTransitionLock();
+    lastInactivePromotionRef.current = null;
+    setIsLayoutTransitioning(true);
+    setLayoutTransitionDirection(nextTransitionDirection);
+    setLayoutMode(nextLayoutMode);
+
+    if (shouldReduceMotion) {
+      setLayoutTransitionDirection(null);
+      setIsLayoutTransitioning(false);
+      return;
+    }
+
+    layoutTransitionTimeoutRef.current = window.setTimeout(() => {
+      layoutTransitionTimeoutRef.current = null;
+      setLayoutTransitionDirection(null);
+      setIsLayoutTransitioning(false);
+    }, LAYOUT_TRANSITION_LOCK_MS);
   };
 
   const handleDragStart = (cardId: string) => {
-    if (isInteractionLocked || cardId !== activeCardId) {
+    if (
+      !isSpreadMode ||
+      isInteractionLocked ||
+      isLayoutTransitioning ||
+      cardId !== activeCardId
+    ) {
       return;
     }
 
@@ -206,7 +366,7 @@ export function FiveCardStack({
   };
 
   const handleDragEnd = (cardId: string, info: PanInfo) => {
-    if (cardId !== activeCardId || flipState.phase !== "dragging") {
+    if (!isSpreadMode || cardId !== activeCardId || flipState.phase !== "dragging") {
       return;
     }
 
@@ -228,7 +388,7 @@ export function FiveCardStack({
   return (
     <section
       className="relative mx-auto flex h-[760px] w-full items-center justify-center overflow-visible"
-      aria-label="One Piece character card spread"
+      aria-label="One Piece character card stack"
       onPointerMoveCapture={() => {
         if (isHoverSuppressed) {
           setIsHoverSuppressed(false);
@@ -241,7 +401,12 @@ export function FiveCardStack({
         aria-live="polite"
       >
         {visibleCards.map((card, index) => {
-          const position = getCardPosition(index, activeIndex, visibleCards.length);
+          const position = getCardPosition(
+            index,
+            activeIndex,
+            visibleCards.length,
+            layoutMode,
+          );
           const isActive = index === activeIndex;
 
           return (
@@ -251,13 +416,18 @@ export function FiveCardStack({
               isActive={isActive}
               flipPhase={flipState.cardId === card.id ? flipState.phase : "idle"}
               flipDirection={flipState.cardId === card.id ? flipState.direction : null}
-              isInteractionLocked={isInteractionLocked}
+              isGestureLocked={isGestureLocked}
               isHoverSuppressed={isHoverSuppressed}
               hoverResetToken={hoverResetToken}
               position={position}
+              layoutMode={layoutMode}
+              isCompactViewport={isCompactViewport}
               shouldReduceMotion={shouldReduceMotion}
               transition={transition}
+              layoutTransitionDirection={layoutTransitionDirection}
+              isLayoutTransitioning={isLayoutTransitioning}
               onSelect={() => handleSelectCard(card.id)}
+              onToggleLayoutMode={handleToggleLayoutMode}
               onDragStart={() => handleDragStart(card.id)}
               onDragEnd={(_, info) => handleDragEnd(card.id, info)}
             />
@@ -272,6 +442,7 @@ function getCardPosition(
   cardIndex: number,
   activeIndex: number,
   cardCount: number,
+  layoutMode: LayoutMode,
 ) {
   let offset = cardIndex - activeIndex;
 
@@ -283,9 +454,11 @@ function getCardPosition(
     offset += cardCount;
   }
 
+  const positions = CARD_POSITIONS_BY_LAYOUT[layoutMode];
+
   return (
-    CARD_POSITIONS.find((position) => position.offset === offset) ??
-    CARD_POSITIONS[2]
+    positions.find((position) => position.offset === offset) ??
+    positions[2]
   );
 }
 
@@ -367,6 +540,56 @@ function getReturnStackTransition(
   }
 }
 
+function getLayoutTransitionDelay(
+  offset: CardPosition["offset"],
+  direction: LayoutTransitionDirection | null,
+) {
+  const absoluteOffset = Math.abs(offset);
+
+  if (absoluteOffset === 0 || direction === null) {
+    return 0;
+  }
+
+  if (direction === "opening") {
+    return absoluteOffset * LAYOUT_TRANSITION_STAGGER_S;
+  }
+
+  return (2 - absoluteOffset) * LAYOUT_TRANSITION_STAGGER_S;
+}
+
+function getCardStackTransition({
+  phase,
+  defaultTransition,
+  isLayoutTransitioning,
+  layoutTransitionDirection,
+  offset,
+  shouldReduceMotion,
+}: {
+  phase: FlipPhase;
+  defaultTransition: Transition;
+  isLayoutTransitioning: boolean;
+  layoutTransitionDirection: LayoutTransitionDirection | null;
+  offset: CardPosition["offset"];
+  shouldReduceMotion: boolean;
+}): Transition {
+  if (phase !== "idle" && phase !== "dragging") {
+    return getReturnStackTransition(phase, defaultTransition);
+  }
+
+  if (!isLayoutTransitioning || layoutTransitionDirection === null) {
+    return defaultTransition;
+  }
+
+  if (shouldReduceMotion) {
+    return { duration: 0 };
+  }
+
+  return {
+    ...layoutTransitionSpring,
+    delay: getLayoutTransitionDelay(offset, layoutTransitionDirection),
+  };
+}
+
 function getFlipTransition(phase: FlipPhase): Transition {
   switch (phase) {
     case "committingToBack":
@@ -433,13 +656,18 @@ type ProfileCardProps = {
   isActive: boolean;
   flipPhase: FlipPhase;
   flipDirection: DragDirection | null;
-  isInteractionLocked: boolean;
+  isGestureLocked: boolean;
   isHoverSuppressed: boolean;
   hoverResetToken: number;
   position: CardPosition;
+  layoutMode: LayoutMode;
+  isCompactViewport: boolean;
   shouldReduceMotion: boolean;
   transition: Transition;
+  layoutTransitionDirection: LayoutTransitionDirection | null;
+  isLayoutTransitioning: boolean;
   onSelect: () => void;
+  onToggleLayoutMode: () => void;
   onDragStart: () => void;
   onDragEnd: (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => void;
 };
@@ -449,13 +677,18 @@ function ProfileCard({
   isActive,
   flipPhase,
   flipDirection,
-  isInteractionLocked,
+  isGestureLocked,
   isHoverSuppressed,
   hoverResetToken,
   position,
+  layoutMode,
+  isCompactViewport,
   shouldReduceMotion,
   transition,
+  layoutTransitionDirection,
+  isLayoutTransitioning,
   onSelect,
+  onToggleLayoutMode,
   onDragStart,
   onDragEnd,
 }: ProfileCardProps) {
@@ -466,12 +699,29 @@ function ProfileCard({
   const isPointerInside = useRef(false);
   const inactivePointerStart = useRef({ x: 0, y: 0 });
   const didInactivePointerDrag = useRef(false);
-  const focusLift = isKeyboardFocused && !isActive ? -8 : isKeyboardFocused ? -3 : 0;
+  const isSpreadMode = layoutMode === "spread";
+  const isInactiveHoverEnabled = isSpreadMode;
+  const layoutToggleLabel = isSpreadMode ? "Close stack" : "Open stack";
+  const activeCardButtonLabel = isActive ? layoutToggleLabel : `Show ${card.name}`;
+  const isCtaEnabled = isActive ? !isGestureLocked : isSpreadMode && !isGestureLocked;
+  const shouldForceActiveCtaReveal = isActive && isCompactViewport;
+  const focusLift =
+    isSpreadMode && isKeyboardFocused
+      ? !isActive
+        ? -8
+        : -3
+      : 0;
   const hoverLift = isActive ? -4 : -10;
   const hoverScale = isActive ? position.scale + 0.006 : position.scale + 0.006;
   const canShowInactiveHover = !isInactivePointerPressing;
+  const hasInactiveHoverReveal =
+    !isActive &&
+    isInactiveHoverEnabled &&
+    canShowInactiveHover &&
+    isCardHovered;
+  const hasActiveHoverReveal = isActive && isCardHovered;
   const isSteppedForward =
-    !isActive && canShowInactiveHover && (isCardHovered || isKeyboardFocused);
+    !isActive && (hasInactiveHoverReveal || isKeyboardFocused);
   const isFlipping = flipPhase !== "idle" && flipPhase !== "dragging";
   const isSettlingToBack =
     flipPhase === "settlingIntoBack" || flipPhase === "complete";
@@ -480,7 +730,14 @@ function ProfileCard({
   const stepForwardX = isInnerInactive ? outwardDirection * 75 : 0;
   const activeStepX = isSteppedForward ? stepForwardX : 0;
   const returnMotion = getReturnMotion(flipPhase, flipDirection);
-  const stackTransition = getReturnStackTransition(flipPhase, transition);
+  const stackTransition = getCardStackTransition({
+    phase: flipPhase,
+    defaultTransition: transition,
+    isLayoutTransitioning,
+    layoutTransitionDirection,
+    offset: position.offset,
+    shouldReduceMotion,
+  });
 
   const handleHoverStart = () => {
     if (hoverEndTimer.current !== undefined) {
@@ -488,6 +745,16 @@ function ProfileCard({
     }
 
     isPointerInside.current = true;
+    if (isGestureLocked) {
+      setIsCardHovered(false);
+      return;
+    }
+
+    if (!isSpreadMode && !isActive) {
+      setIsCardHovered(false);
+      return;
+    }
+
     if (isHoverSuppressed) {
       setIsCardHovered(false);
       return;
@@ -509,6 +776,11 @@ function ProfileCard({
   };
 
   const handlePointerMove = (event: { clientX: number; clientY: number }) => {
+    if (isGestureLocked) {
+      setIsCardHovered(false);
+      return;
+    }
+
     if (isInactivePointerPressing) {
       const dragDistance = Math.hypot(
         event.clientX - inactivePointerStart.current.x,
@@ -524,12 +796,21 @@ function ProfileCard({
       return;
     }
 
+    if (!isSpreadMode && !isActive) {
+      setIsCardHovered(false);
+      return;
+    }
+
     if (!isHoverSuppressed && isPointerInside.current) {
       setIsCardHovered(true);
     }
   };
 
   const handlePointerDownCapture = (event: { clientX: number; clientY: number }) => {
+    if (!isSpreadMode || isGestureLocked) {
+      return;
+    }
+
     if (isActive) {
       return;
     }
@@ -552,6 +833,51 @@ function ProfileCard({
     setIsInactivePointerPressing(false);
     setIsCardHovered(false);
     setIsKeyboardFocused(false);
+  };
+
+  const handleCardButtonClick = () => {
+    if (didInactivePointerDrag.current) {
+      didInactivePointerDrag.current = false;
+      return;
+    }
+
+    if (!isActive) {
+      if (isSpreadMode && !isGestureLocked) {
+        onSelect();
+      }
+
+      return;
+    }
+  };
+
+  const handleCardButtonKeyDown = (
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+  ) => {
+    if (!isActive) {
+      return;
+    }
+
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (!isGestureLocked) {
+      onToggleLayoutMode();
+    }
+  };
+
+  const handleActiveLayoutDoubleClick = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault();
+
+    if (isGestureLocked) {
+      return;
+    }
+
+    onToggleLayoutMode();
   };
 
   useEffect(() => {
@@ -588,6 +914,28 @@ function ProfileCard({
 
     setIsCardHovered(false);
   }, [hoverResetToken]);
+
+  useEffect(() => {
+    if (!isGestureLocked) {
+      return;
+    }
+
+    if (hoverEndTimer.current !== undefined) {
+      window.clearTimeout(hoverEndTimer.current);
+    }
+
+    setIsCardHovered(false);
+    setIsInactivePointerPressing(false);
+    setIsKeyboardFocused(false);
+  }, [isGestureLocked]);
+
+  useEffect(() => {
+    if (!isSpreadMode) {
+      setIsCardHovered(false);
+      setIsInactivePointerPressing(false);
+      setIsKeyboardFocused(false);
+    }
+  }, [isSpreadMode]);
 
   useEffect(() => {
     return () => {
@@ -631,7 +979,11 @@ function ProfileCard({
         opacity: position.opacity * returnMotion.opacity,
       }}
       whileHover={
-        shouldReduceMotion || isInteractionLocked || isInactivePointerPressing
+        (!isSpreadMode && !isActive) ||
+        shouldReduceMotion ||
+        isGestureLocked ||
+        isInactivePointerPressing ||
+        (!isActive && !isInactiveHoverEnabled)
           ? undefined
           : {
               y: position.y + hoverLift,
@@ -655,7 +1007,7 @@ function ProfileCard({
         initial={false}
         animate={flipRotation}
         transition={shouldReduceMotion ? { duration: 0 } : flipTransition}
-        drag={isActive && !isInteractionLocked}
+        drag={isSpreadMode && isActive && !isGestureLocked}
         dragMomentum={false}
         dragElastic={0.12}
         dragSnapToOrigin
@@ -682,29 +1034,29 @@ function ProfileCard({
           <button
             type="button"
             className="absolute inset-0 z-10 rounded-[20px] text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-black/70 focus-visible:ring-offset-4"
-            onClick={() => {
-              if (didInactivePointerDrag.current) {
-                didInactivePointerDrag.current = false;
-                return;
-              }
-
-              if (!isActive && !isInteractionLocked) {
-                onSelect();
-              }
-            }}
+            onClick={handleCardButtonClick}
+            onDoubleClick={isActive ? handleActiveLayoutDoubleClick : undefined}
+            onKeyDown={handleCardButtonKeyDown}
             onMouseDown={(event) => {
-              if (isActive || isInteractionLocked) {
+              if (isActive || isGestureLocked) {
                 event.preventDefault();
               }
             }}
             onFocus={() => {
-              if (!isActive && !isInteractionLocked) {
+              if (isSpreadMode && !isActive && !isGestureLocked) {
                 setIsKeyboardFocused(true);
               }
             }}
             onBlur={() => setIsKeyboardFocused(false)}
-            aria-pressed={isActive}
-            aria-label={`Show ${card.name}`}
+            tabIndex={!isSpreadMode && !isActive ? -1 : 0}
+            aria-expanded={isActive ? isSpreadMode : undefined}
+            aria-label={activeCardButtonLabel}
+            aria-description={
+              isActive
+                ? `Press Enter or Space to ${layoutToggleLabel.toLowerCase()}. Double-click with a mouse to do the same.`
+                : undefined
+            }
+            title={isActive ? `Double-click to ${layoutToggleLabel.toLowerCase()}` : undefined}
           />
 
           <div
@@ -733,9 +1085,18 @@ function ProfileCard({
             isActive={isActive}
             name={card.name}
             position={position}
-            isRevealed={canShowInactiveHover && (isCardHovered || isKeyboardFocused)}
+            isRevealed={
+              shouldForceActiveCtaReveal ||
+              hasActiveHoverReveal ||
+              hasInactiveHoverReveal ||
+              (!isActive && isKeyboardFocused)
+            }
+            isEnabled={isCtaEnabled}
+            isLayoutExpanded={isSpreadMode}
+            layoutToggleLabel={layoutToggleLabel}
             shouldReduceMotion={shouldReduceMotion}
             onSelect={onSelect}
+            onToggleLayoutMode={isActive ? onToggleLayoutMode : undefined}
           />
 
           <div className="pointer-events-none relative z-20 mt-[39px] w-[332px]">
@@ -774,7 +1135,7 @@ function ProfileCard({
           <div className="relative z-0 h-full w-full p-[10px]">
             <div className="relative h-full w-full overflow-hidden rounded-[10px]">
               <img
-                src="/card-back.png"
+                src={cardBackImageSrc}
                 alt=""
                 className="h-full w-full object-cover"
                 draggable={false}
@@ -819,8 +1180,12 @@ type CardCtaProps = {
   name: string;
   position: CardPosition;
   isRevealed: boolean;
+  isEnabled: boolean;
+  isLayoutExpanded: boolean;
+  layoutToggleLabel: string;
   shouldReduceMotion: boolean;
   onSelect: () => void;
+  onToggleLayoutMode?: () => void;
 };
 
 function CardCta({
@@ -828,14 +1193,18 @@ function CardCta({
   name,
   position,
   isRevealed,
+  isEnabled,
+  isLayoutExpanded,
+  layoutToggleLabel,
   shouldReduceMotion,
   onSelect,
+  onToggleLayoutMode,
 }: CardCtaProps) {
   const [isCtaFocused, setIsCtaFocused] = useState(false);
   const idleWidth = 40;
-  const hoverWidth = isActive ? 97 : 132;
-  const label = isActive ? "Follow" : "View work";
-  const isExpanded = isRevealed || isCtaFocused;
+  const hoverWidth = isActive ? 126 : 132;
+  const label = isActive ? layoutToggleLabel : "View work";
+  const isExpanded = isRevealed || (isEnabled && isCtaFocused);
   const iconSize = isActive && isExpanded ? 20 : 24;
   const isLeftSide = position.offset < 0;
   const ctaTransition = shouldReduceMotion
@@ -845,10 +1214,10 @@ function CardCta({
       : inactiveCtaTween;
 
   useEffect(() => {
-    if (isActive) {
+    if (isActive || !isEnabled) {
       setIsCtaFocused(false);
     }
-  }, [isActive]);
+  }, [isActive, isEnabled]);
 
   return (
     <motion.button
@@ -857,23 +1226,40 @@ function CardCta({
         "absolute top-[13px] z-30 flex h-10 items-center overflow-hidden rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-black/70 focus-visible:ring-offset-2",
         isLeftSide ? "left-[13px]" : "right-[13px]",
         isActive ? "bg-white text-[#0c0c0c]" : "bg-black text-white",
+        !isEnabled ? "pointer-events-none" : "",
       ].join(" ")}
       initial={false}
       animate={{ width: isExpanded && !shouldReduceMotion ? hoverWidth : idleWidth }}
       transition={ctaTransition}
-      onFocus={() => setIsCtaFocused(true)}
+      onFocus={() => {
+        if (isEnabled) {
+          setIsCtaFocused(true);
+        }
+      }}
       onBlur={() => setIsCtaFocused(false)}
       onMouseDown={(event) => {
-        if (isActive) {
+        if (!isEnabled || isActive) {
           event.preventDefault();
         }
       }}
       onClick={() => {
+        if (!isEnabled) {
+          return;
+        }
+
+        if (isActive) {
+          onToggleLayoutMode?.();
+          return;
+        }
+
         if (!isActive) {
           onSelect();
         }
       }}
-      aria-label={`${label} for ${name}`}
+      tabIndex={isEnabled ? 0 : -1}
+      aria-expanded={isActive ? isLayoutExpanded : undefined}
+      aria-label={isActive ? label : `${label} for ${name}`}
+      title={isActive ? label : undefined}
     >
       <motion.span
         aria-hidden="true"
