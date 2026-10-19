@@ -152,7 +152,7 @@ const dragSnapTransition = {
 
 const backFrameGradientClass =
   "bg-[linear-gradient(135deg,#f7f7f7_0%,#8d8d8d_48%,#050505_100%)]";
-const cardBackImageSrc = `${import.meta.env.BASE_URL}card-back.png`;
+const cardBackImageSrc = `${import.meta.env.BASE_URL}card-back.webp`;
 const dragReturnThreshold = 140;
 const returnEase: Transition["ease"] = [0.22, 1, 0.36, 1];
 const backGlowTransition: Transition = {
