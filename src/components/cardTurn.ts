@@ -20,6 +20,37 @@ export const TURN_BEATS_MS = {
 
 export const returnEase: Transition["ease"] = [0.22, 1, 0.36, 1];
 
+const THROW_COAST_S = 0.15;
+const THROW_MIN_OFFSET = 12;
+
+export const liftTransition: Transition = {
+  duration: 0.14,
+  ease: returnEase,
+};
+
+/**
+ * Reads a release. A throw is judged by where the card would coast to, so a
+ * quick flick counts, but only towards the side the card is already on: a card
+ * swung back towards the stack is a change of mind, however fast it moves.
+ */
+export function getThrowDirection(
+  offset: number,
+  velocity: number,
+  distance: number,
+): DragDirection | null {
+  const coastedTo = offset + velocity * THROW_COAST_S;
+
+  if (
+    Math.abs(offset) < THROW_MIN_OFFSET ||
+    Math.abs(coastedTo) < distance ||
+    Math.sign(coastedTo) !== Math.sign(offset)
+  ) {
+    return null;
+  }
+
+  return coastedTo < 0 ? "left" : "right";
+}
+
 export const wait = (duration: number) =>
   new Promise((resolve) => {
     window.setTimeout(resolve, duration);

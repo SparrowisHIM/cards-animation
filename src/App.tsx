@@ -52,7 +52,7 @@ export default function App() {
   const isCompactViewport = safeStageScale < 0.98;
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#d8d2c8] px-3 py-6 sm:px-8 sm:py-16">
+    <main className="flex min-h-screen items-center justify-center overflow-hidden bg-[#d8d2c8] px-3 py-6 sm:px-8 sm:py-16">
       <div
         className="relative flex items-center justify-center"
         style={{
@@ -73,6 +73,7 @@ export default function App() {
             cards={workCards}
             initialActiveIndex={2}
             isCompactViewport={isCompactViewport}
+            stageScale={safeStageScale}
           />
         </div>
       </div>

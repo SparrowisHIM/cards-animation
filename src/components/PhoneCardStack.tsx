@@ -7,12 +7,10 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
-  animate,
   motion,
   useMotionValue,
   useReducedMotion,
   useTransform,
-  type AnimationPlaybackControls,
   type PanInfo,
   type Transition,
 } from "framer-motion";
@@ -24,11 +22,13 @@ import {
   getFlipTransition,
   getReturnMotion,
   getReturnStackTransition,
-  returnEase,
+  getThrowDirection,
+  liftTransition,
   wait,
   type DragDirection,
   type FlipPhase,
 } from "./cardTurn";
+import { useSnapBack } from "./useSnapBack";
 
 /**
  * The stack under 640 px wide. Scaling the desktop stage down leaves cards too
@@ -91,8 +91,6 @@ const Z_TUCKED = Z_NEAR;
 
 /** A release throws the card when it would coast past this share of the card's width. */
 const THROW_DISTANCE = 0.3;
-const THROW_COAST_S = 0.15;
-const THROW_MIN_OFFSET = 12;
 const TAP_SLOP = 10;
 const TAP_MAX_MS = 400;
 /** A press acts on pointer up, so the click a browser sends after it is ignored for this long. */
@@ -109,17 +107,6 @@ const slotSpring: Transition = {
   stiffness: 260,
   damping: 32,
   mass: 0.9,
-};
-
-const snapBackSpring: Transition = {
-  type: "spring",
-  stiffness: 420,
-  damping: 38,
-};
-
-const liftTransition: Transition = {
-  duration: 0.14,
-  ease: returnEase,
 };
 
 function getCardWidth({ width, height }: PhoneCardStackProps["viewport"]) {
@@ -339,17 +326,18 @@ export function PhoneCardStack({
   };
 
   const handleRelease = (cardId: string, { offset, velocity }: PanInfo) => {
-    const coastedTo = offset.x + velocity.x * THROW_COAST_S;
-    const isThrown =
-      Math.abs(offset.x) >= THROW_MIN_OFFSET &&
-      Math.abs(coastedTo) >= cardWidth * THROW_DISTANCE &&
-      !isFrontTurning();
+    const direction = getThrowDirection(
+      offset.x,
+      velocity.x,
+      cardWidth * THROW_DISTANCE,
+    );
 
-    if (isThrown) {
-      void throwFrontCard(cardId, coastedTo < 0 ? "left" : "right", velocity.x);
+    if (!direction || isFrontTurning()) {
+      return false;
     }
 
-    return isThrown;
+    void throwFrontCard(cardId, direction, velocity.x);
+    return true;
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
@@ -442,7 +430,7 @@ function PhoneCard({
   const rotateY = useMotionValue(0);
   const press = useRef<{ x: number; y: number; time: number } | null>(null);
   const isDragging = useRef(false);
-  const snapBack = useRef<AnimationPlaybackControls | null>(null);
+  const { snapBack, stopSnapBack } = useSnapBack(shouldReduceMotion, x);
   const isActive = offset === 0;
   const tapPhase = isTapPhase(turn?.phase) ? turn.phase : null;
   const flipPhase: FlipPhase =
@@ -484,9 +472,9 @@ function PhoneCard({
 
   useEffect(() => {
     if (turn) {
-      snapBack.current?.stop();
+      stopSnapBack();
     }
-  }, [turn]);
+  }, [turn, stopSnapBack]);
 
   const bringThisSideForward = (button: HTMLElement, pressX?: number) => {
     if (!isActive) {
@@ -498,26 +486,13 @@ function PhoneCard({
     onBringForward(pressX === undefined || pressX >= left + width / 2 ? 1 : -1);
   };
 
-  // Kept in a ref because the end of a drag can leave x without a reference to
-  // this animation, and then a new touch could not stop it.
-  const returnToStack = (velocity = 0) => {
-    snapBack.current?.stop();
-    snapBack.current = animate(
-      x,
-      0,
-      shouldReduceMotion
-        ? { duration: 0.12, ease: returnEase }
-        : { ...snapBackSpring, velocity },
-    );
-  };
-
   const handleDragEnd = (info: PanInfo) => {
     const wasThrown = onRelease(info);
 
     isDragging.current = false;
 
     if (!wasThrown) {
-      returnToStack(info.velocity.x);
+      snapBack([info.velocity.x]);
     } else if (shouldReduceMotion) {
       x.jump(0);
     }
@@ -528,12 +503,12 @@ function PhoneCard({
     press.current = null;
 
     if (!isDragging.current && x.get() !== 0) {
-      returnToStack();
+      snapBack();
     }
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    snapBack.current?.stop();
+    stopSnapBack();
     press.current = {
       x: event.clientX,
       y: event.clientY,

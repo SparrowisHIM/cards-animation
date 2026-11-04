@@ -6,7 +6,14 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { motion, useReducedMotion, type PanInfo, type Transition } from "framer-motion";
+import {
+  MotionConfig,
+  motion,
+  useMotionValue,
+  useReducedMotion,
+  type PanInfo,
+  type Transition,
+} from "framer-motion";
 import { ArrowUpRight } from "lucide-react";
 import type { ProfileCardData } from "../data/cards";
 import { CardBack } from "./CardBack";
@@ -16,15 +23,20 @@ import {
   getFlipTransition,
   getReturnMotion,
   getReturnStackTransition,
+  getThrowDirection,
+  liftTransition,
   wait,
   type DragDirection,
   type FlipPhase,
 } from "./cardTurn";
+import { useSnapBack } from "./useSnapBack";
 
 type FiveCardStackProps = {
   cards: ProfileCardData[];
   initialActiveIndex?: number;
   isCompactViewport?: boolean;
+  /** How far the stage is scaled to fit the window, so a drag can stay 1:1. */
+  stageScale?: number;
 };
 
 type CardPosition = {
@@ -146,9 +158,12 @@ const inactiveCtaTween: Transition = {
   ease: [0.22, 1, 0.36, 1],
 };
 
-const dragSnapTransition = {
-  bounceStiffness: 260,
-  bounceDamping: 32,
+/** Matches the turn's settle, so a thrown card and its slot arrive together. */
+const throwSettleSpring: Transition = {
+  type: "spring",
+  stiffness: 190,
+  damping: 31,
+  mass: 1,
 };
 
 const dragReturnThreshold = 140;
@@ -156,6 +171,7 @@ export function FiveCardStack({
   cards,
   initialActiveIndex = 2,
   isCompactViewport = false,
+  stageScale = 1,
 }: FiveCardStackProps) {
   const initialCards = useMemo(() => cards.slice(0, 5), [cards]);
   const [layoutMode, setLayoutMode] = useState<LayoutMode>("clustered");
@@ -180,6 +196,15 @@ export function FiveCardStack({
     null,
   );
   const shouldReduceMotion = useReducedMotion() ?? false;
+  // Only the front card is dragged, and it sits inside the stage's scale and its own.
+  const transformPagePoint = useMemo(() => {
+    const scale = stageScale * CARD_POSITIONS_SPREAD[2].scale;
+
+    return (point: { x: number; y: number }) => ({
+      x: point.x / scale,
+      y: point.y / scale,
+    });
+  }, [stageScale]);
 
   const visibleCards = orderedCards;
   const activeIndex = Math.max(
@@ -354,74 +379,79 @@ export function FiveCardStack({
 
   const handleDragEnd = (cardId: string, info: PanInfo) => {
     if (!isSpreadMode || cardId !== activeCardId || flipState.phase !== "dragging") {
-      return;
+      return false;
     }
 
-    const horizontalDrag = info.offset.x;
+    const direction = getThrowDirection(
+      info.offset.x,
+      info.velocity.x,
+      dragReturnThreshold,
+    );
+
     setIsHoverSuppressed(true);
     setHoverResetToken((token) => token + 1);
 
-    if (Math.abs(horizontalDrag) < dragReturnThreshold) {
+    if (!direction) {
       setFlipState({ phase: "idle", cardId: null, direction: null });
-      return;
+      return false;
     }
 
-    void commitActiveCardToEdge(
-      cardId,
-      horizontalDrag < 0 ? "left" : "right",
-    );
+    void commitActiveCardToEdge(cardId, direction);
+    return true;
   };
 
   return (
-    <section
-      className="relative mx-auto flex h-[760px] w-full items-center justify-center overflow-visible"
-      aria-label="Card stack"
-      onPointerMoveCapture={() => {
-        if (isHoverSuppressed) {
-          setIsHoverSuppressed(false);
-        }
-      }}
-    >
-      <div
-        className="relative h-[542px] w-full"
-        role="list"
-        aria-live="polite"
+    <MotionConfig transformPagePoint={transformPagePoint}>
+      <section
+        className="relative mx-auto flex h-[760px] w-full items-center justify-center overflow-visible"
+        aria-label="Card stack"
+        onPointerMoveCapture={() => {
+          if (isHoverSuppressed) {
+            setIsHoverSuppressed(false);
+          }
+        }}
       >
-        {visibleCards.map((card, index) => {
-          const position = getCardPosition(
-            index,
-            activeIndex,
-            visibleCards.length,
-            layoutMode,
-          );
-          const isActive = index === activeIndex;
+        <div
+          className="relative h-[542px] w-full"
+          role="list"
+          aria-live="polite"
+        >
+          {visibleCards.map((card, index) => {
+            const position = getCardPosition(
+              index,
+              activeIndex,
+              visibleCards.length,
+              layoutMode,
+            );
+            const isActive = index === activeIndex;
 
-          return (
-            <ProfileCard
-              key={card.id}
-              card={card}
-              isActive={isActive}
-              flipPhase={flipState.cardId === card.id ? flipState.phase : "idle"}
-              flipDirection={flipState.cardId === card.id ? flipState.direction : null}
-              isGestureLocked={isGestureLocked}
-              isHoverSuppressed={isHoverSuppressed}
-              hoverResetToken={hoverResetToken}
-              position={position}
-              layoutMode={layoutMode}
-              isCompactViewport={isCompactViewport}
-              shouldReduceMotion={shouldReduceMotion}
-              transition={transition}
-              layoutTransitionDirection={layoutTransitionDirection}
-              isLayoutTransitioning={isLayoutTransitioning}
-              onSelect={() => handleSelectCard(card.id)}
-              onToggleLayoutMode={handleToggleLayoutMode}
-              onDragStart={() => handleDragStart(card.id)}
-              onDragEnd={(_, info) => handleDragEnd(card.id, info)}
-            />
-          );
-        })}
-      </div>
-    </section>
+            return (
+              <ProfileCard
+                key={card.id}
+                card={card}
+                isActive={isActive}
+                flipPhase={flipState.cardId === card.id ? flipState.phase : "idle"}
+                flipDirection={flipState.cardId === card.id ? flipState.direction : null}
+                isGestureLocked={isGestureLocked}
+                isHoverSuppressed={isHoverSuppressed}
+                hoverResetToken={hoverResetToken}
+                position={position}
+                layoutMode={layoutMode}
+                isCompactViewport={isCompactViewport}
+                shouldReduceMotion={shouldReduceMotion}
+                transition={transition}
+                layoutTransitionDirection={layoutTransitionDirection}
+                isLayoutTransitioning={isLayoutTransitioning}
+                onSelect={() => handleSelectCard(card.id)}
+                onToggleLayoutMode={handleToggleLayoutMode}
+                onDragStart={() => handleDragStart(card.id)}
+                onDragEnd={(info) => handleDragEnd(card.id, info)}
+              />
+            );
+          })}
+        </div>
+      </section>
+    </MotionConfig>
   );
 }
 
@@ -525,7 +555,8 @@ type ProfileCardProps = {
   onSelect: () => void;
   onToggleLayoutMode: () => void;
   onDragStart: () => void;
-  onDragEnd: (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => void;
+  /** Returns whether the release threw the card. */
+  onDragEnd: (info: PanInfo) => boolean;
 };
 
 function ProfileCard({
@@ -555,6 +586,10 @@ function ProfileCard({
   const isPointerInside = useRef(false);
   const inactivePointerStart = useRef({ x: 0, y: 0 });
   const didInactivePointerDrag = useRef(false);
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const isDragging = useRef(false);
+  const { snapBack, stopSnapBack } = useSnapBack(shouldReduceMotion, x, y);
   const isSpreadMode = layoutMode === "spread";
   const isInactiveHoverEnabled = isSpreadMode;
   const layoutToggleLabel = isSpreadMode ? "Close stack" : "Open stack";
@@ -578,6 +613,10 @@ function ProfileCard({
   const hasActiveHoverReveal = isActive && isCardHovered;
   const isSteppedForward =
     !isActive && (hasInactiveHoverReveal || isKeyboardFocused);
+  // Everything else locks during a drag, but the drag itself has to stay on:
+  // Framer stops moving the card the moment `drag` turns false.
+  const canDrag =
+    isSpreadMode && isActive && (!isGestureLocked || flipPhase === "dragging");
   const isFlipping = flipPhase !== "idle" && flipPhase !== "dragging";
   const isSettlingToBack =
     flipPhase === "settlingIntoBack" || flipPhase === "complete";
@@ -663,6 +702,8 @@ function ProfileCard({
   };
 
   const handlePointerDownCapture = (event: { clientX: number; clientY: number }) => {
+    stopSnapBack();
+
     if (!isSpreadMode || isGestureLocked) {
       return;
     }
@@ -689,6 +730,28 @@ function ProfileCard({
     setIsInactivePointerPressing(false);
     setIsCardHovered(false);
     setIsKeyboardFocused(false);
+
+    // A press can catch the card on its way back and let go without dragging it.
+    if (
+      flipPhase === "idle" &&
+      !isDragging.current &&
+      (x.get() !== 0 || y.get() !== 0)
+    ) {
+      snapBack();
+    }
+  };
+
+  const handleCardDragEnd = (info: PanInfo) => {
+    const wasThrown = onDragEnd(info);
+
+    isDragging.current = false;
+
+    if (!wasThrown) {
+      snapBack([info.velocity.x, info.velocity.y]);
+    } else if (shouldReduceMotion) {
+      x.jump(0);
+      y.jump(0);
+    }
   };
 
   const handleCardButtonClick = () => {
@@ -742,6 +805,14 @@ function ProfileCard({
       setIsInactivePointerPressing(false);
     }
   }, [isActive]);
+
+  // A thrown card stays where it left the hand while it turns, then goes home
+  // with its slot, so it never drifts back against the throw.
+  useEffect(() => {
+    if (flipPhase === "settlingIntoBack") {
+      snapBack([], throwSettleSpring);
+    }
+  }, [flipPhase, snapBack]);
 
   useEffect(() => {
     if (!isInactivePointerPressing) {
@@ -856,17 +927,22 @@ function ProfileCard({
     >
       <motion.div
         className="relative h-full w-full rounded-[20px] [transform-style:preserve-3d]"
+        style={{ x, y }}
         initial={false}
         animate={flipRotation}
-        transition={shouldReduceMotion ? { duration: 0 } : flipTransition}
-        drag={isSpreadMode && isActive && !isGestureLocked}
+        transition={
+          shouldReduceMotion
+            ? { duration: 0 }
+            : { ...flipTransition, scale: liftTransition }
+        }
+        drag={canDrag}
         dragMomentum={false}
-        dragElastic={0.12}
-        dragSnapToOrigin
-        dragTransition={dragSnapTransition}
         whileDrag={shouldReduceMotion ? undefined : { scale: 1.018 }}
-        onDragStart={onDragStart}
-        onDragEnd={onDragEnd}
+        onDragStart={() => {
+          isDragging.current = true;
+          onDragStart();
+        }}
+        onDragEnd={(_, info) => handleCardDragEnd(info)}
       >
         <div
           className={[
