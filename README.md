@@ -66,4 +66,8 @@ Quick manual smoke check:
 - Confirm the active card toggles the layout with double-click, `Enter`, and `Space`
 - Confirm the active CTA toggles the layout on touch/click
 - Confirm inactive cards only promote in spread mode
+- Under 640 px wide, confirm the front card follows the finger and a drag or flick past about a third of its width turns it away
+- Under 640 px wide, confirm a drag let go early snaps back, and that the card can be caught on its way
+- Under 640 px wide, confirm tapping either side of the front card, or a neighbour, brings that card forward
+- Under 640 px wide, with reduced motion on, confirm the cards swap with no turn
 - Confirm the production preview works with `npm run preview`

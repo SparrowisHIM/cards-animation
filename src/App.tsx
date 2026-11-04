@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { FiveCardStack } from "./components/FiveCardStack";
+import { PhoneCardStack } from "./components/PhoneCardStack";
 import { workCards } from "./data/cards";
 
 const DESKTOP_STAGE_WIDTH = 1560;
 const DESKTOP_STAGE_HEIGHT = 760;
+const PHONE_MAX_WIDTH = 640;
 
 export default function App() {
   const [viewport, setViewport] = useState(() => ({
@@ -27,8 +29,16 @@ export default function App() {
     };
   }, []);
 
-  const horizontalInset = viewport.width < 640 ? 24 : 64;
-  const verticalInset = viewport.width < 640 ? 32 : 96;
+  if (viewport.width < PHONE_MAX_WIDTH) {
+    return (
+      <main className="flex h-[100dvh] items-center justify-center overflow-hidden bg-[#d8d2c8]">
+        <PhoneCardStack cards={workCards} initialActiveIndex={2} viewport={viewport} />
+      </main>
+    );
+  }
+
+  const horizontalInset = 64;
+  const verticalInset = 96;
   const availableWidth = Math.max(0, viewport.width - horizontalInset);
   const availableHeight = Math.max(0, viewport.height - verticalInset);
   const stageScale = Math.min(

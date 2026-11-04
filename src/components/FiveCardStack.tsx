@@ -9,6 +9,17 @@ import {
 import { motion, useReducedMotion, type PanInfo, type Transition } from "framer-motion";
 import { ArrowUpRight } from "lucide-react";
 import type { ProfileCardData } from "../data/cards";
+import { CardBack } from "./CardBack";
+import {
+  TURN_BEATS_MS,
+  getFlipRotation,
+  getFlipTransition,
+  getReturnMotion,
+  getReturnStackTransition,
+  wait,
+  type DragDirection,
+  type FlipPhase,
+} from "./cardTurn";
 
 type FiveCardStackProps = {
   cards: ProfileCardData[];
@@ -30,21 +41,11 @@ type CardPosition = {
 type LayoutMode = "clustered" | "spread";
 type LayoutTransitionDirection = "opening" | "closing";
 
-type FlipPhase =
-  | "idle"
-  | "dragging"
-  | "committingToBack"
-  | "showingBackFace"
-  | "settlingIntoBack"
-  | "complete";
-
 type FlipState = {
   phase: FlipPhase;
   cardId: string | null;
   direction: DragDirection | null;
 };
-
-type DragDirection = "left" | "right";
 
 const CARD_WIDTH = 361;
 const CLUSTERED_LAYOUT_X_OFFSETS = {
@@ -150,21 +151,7 @@ const dragSnapTransition = {
   bounceDamping: 32,
 };
 
-const backFrameGradientClass =
-  "bg-[linear-gradient(135deg,#f7f7f7_0%,#8d8d8d_48%,#050505_100%)]";
-const cardBackImageSrc = `${import.meta.env.BASE_URL}card-back.webp`;
 const dragReturnThreshold = 140;
-const returnEase: Transition["ease"] = [0.22, 1, 0.36, 1];
-const backGlowTransition: Transition = {
-  duration: 0.3,
-  ease: returnEase,
-};
-
-const wait = (duration: number) =>
-  new Promise((resolve) => {
-    window.setTimeout(resolve, duration);
-  });
-
 export function FiveCardStack({
   cards,
   initialActiveIndex = 2,
@@ -280,20 +267,20 @@ export function FiveCardStack({
     }
 
     setFlipState({ phase: "committingToBack", cardId, direction });
-    await wait(180);
+    await wait(TURN_BEATS_MS.committingToBack);
     if (sequenceToken.current !== token) return;
 
     setFlipState({ phase: "showingBackFace", cardId, direction });
-    await wait(260);
+    await wait(TURN_BEATS_MS.showingBackFace);
     if (sequenceToken.current !== token) return;
 
     moveActiveCardToEdge(cardId, direction);
     setFlipState({ phase: "settlingIntoBack", cardId, direction });
-    await wait(480);
+    await wait(TURN_BEATS_MS.settlingIntoBack);
     if (sequenceToken.current !== token) return;
 
     setFlipState({ phase: "complete", cardId, direction });
-    await wait(240);
+    await wait(TURN_BEATS_MS.complete);
     if (sequenceToken.current !== token) return;
 
     setFlipState({ phase: "idle", cardId: null, direction: null });
@@ -470,76 +457,6 @@ function getCardAtOffset(
   return cards[(activeIndex + offset + cards.length) % cards.length];
 }
 
-function getFlipRotation(phase: FlipPhase, direction: DragDirection | null) {
-  const directionSign = direction === "left" ? -1 : 1;
-
-  switch (phase) {
-    case "committingToBack":
-      return {
-        rotateY: directionSign * 66,
-        rotateX: 0.8,
-        rotateZ: directionSign * 0.25,
-      };
-    case "showingBackFace":
-      return {
-        rotateY: directionSign * 176,
-        rotateX: 1.4,
-        rotateZ: directionSign * -0.35,
-      };
-    case "settlingIntoBack":
-      return {
-        rotateY: directionSign * 326,
-        rotateX: 0.45,
-        rotateZ: directionSign * -0.18,
-      };
-    case "complete":
-      return { rotateY: directionSign * 360, rotateX: 0, rotateZ: 0 };
-    case "dragging":
-    case "idle":
-    default:
-      return { rotateY: 0, rotateX: 0, rotateZ: 0 };
-  }
-}
-
-function getReturnMotion(phase: FlipPhase, direction: DragDirection | null) {
-  const directionSign = direction === "left" ? -1 : direction === "right" ? 1 : 0;
-
-  switch (phase) {
-    case "committingToBack":
-      return { x: directionSign * 44, y: -12, scale: 0.012, opacity: 1 };
-    case "showingBackFace":
-      return { x: directionSign * 96, y: -8, scale: 0.004, opacity: 1 };
-    case "settlingIntoBack":
-      return { x: 0, y: -6, scale: 0.012, opacity: 0.98 };
-    case "complete":
-      return { x: 0, y: 0, scale: 0, opacity: 1 };
-    case "dragging":
-    case "idle":
-    default:
-      return { x: 0, y: 0, scale: 0, opacity: 1 };
-  }
-}
-
-function getReturnStackTransition(
-  phase: FlipPhase,
-  defaultTransition: Transition,
-): Transition {
-  switch (phase) {
-    case "committingToBack":
-      return { duration: 0.18, ease: returnEase };
-    case "showingBackFace":
-      return { duration: 0.26, ease: returnEase };
-    case "settlingIntoBack":
-      return { type: "spring", stiffness: 190, damping: 31, mass: 1 };
-    case "complete":
-      return { duration: 0.24, ease: returnEase };
-    case "dragging":
-    case "idle":
-    default:
-      return defaultTransition;
-  }
-}
-
 function getLayoutTransitionDelay(
   offset: CardPosition["offset"],
   direction: LayoutTransitionDirection | null,
@@ -588,67 +505,6 @@ function getCardStackTransition({
     ...layoutTransitionSpring,
     delay: getLayoutTransitionDelay(offset, layoutTransitionDirection),
   };
-}
-
-function getFlipTransition(phase: FlipPhase): Transition {
-  switch (phase) {
-    case "committingToBack":
-      return { duration: 0.18, ease: returnEase };
-    case "showingBackFace":
-      return { duration: 0.26, ease: returnEase };
-    case "settlingIntoBack":
-      return { duration: 0.48, ease: [0.25, 0.9, 0.3, 1] };
-    case "complete":
-      return { duration: 0.24, ease: returnEase };
-    case "dragging":
-    case "idle":
-    default:
-      return { duration: 0 };
-  }
-}
-
-function getBackGlowOpacity(phase: FlipPhase) {
-  switch (phase) {
-    case "showingBackFace":
-      return 0.56;
-    case "settlingIntoBack":
-      return 0.12;
-    default:
-      return 0;
-  }
-}
-
-function getBackGlowScale(phase: FlipPhase) {
-  switch (phase) {
-    case "showingBackFace":
-      return 1;
-    case "settlingIntoBack":
-      return 0.985;
-    default:
-      return 0.96;
-  }
-}
-
-function getBackSurfaceGlowOpacity(phase: FlipPhase) {
-  switch (phase) {
-    case "showingBackFace":
-      return 0.34;
-    case "settlingIntoBack":
-      return 0.08;
-    default:
-      return 0;
-  }
-}
-
-function getBackEdgeGlowOpacity(phase: FlipPhase) {
-  switch (phase) {
-    case "showingBackFace":
-      return 0.42;
-    case "settlingIntoBack":
-      return 0.14;
-    default:
-      return 0;
-  }
 }
 
 type ProfileCardProps = {
@@ -947,10 +803,6 @@ function ProfileCard({
 
   const flipRotation = getFlipRotation(flipPhase, flipDirection);
   const flipTransition = getFlipTransition(flipPhase);
-  const backGlowOpacity = getBackGlowOpacity(flipPhase);
-  const backGlowScale = getBackGlowScale(flipPhase);
-  const backSurfaceGlowOpacity = getBackSurfaceGlowOpacity(flipPhase);
-  const backEdgeGlowOpacity = getBackEdgeGlowOpacity(flipPhase);
 
   return (
     <motion.article
@@ -1122,54 +974,7 @@ function ProfileCard({
           </div>
         </div>
 
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 isolate overflow-hidden rounded-[20px] shadow-card [backface-visibility:hidden] [transform:rotateY(180deg)]"
-        >
-          <div
-            className={[
-              "absolute inset-0 rounded-[20px]",
-              backFrameGradientClass,
-            ].join(" ")}
-          />
-          <div className="relative z-0 h-full w-full p-[10px]">
-            <div className="relative h-full w-full overflow-hidden rounded-[10px]">
-              <img
-                src={cardBackImageSrc}
-                alt=""
-                className="h-full w-full object-cover"
-                draggable={false}
-              />
-              <motion.span
-                className="absolute inset-0 rounded-[10px] bg-[radial-gradient(circle_at_50%_38%,rgba(255,255,255,0.24),rgba(255,255,255,0.08)_36%,rgba(255,255,255,0)_72%)]"
-                initial={false}
-                animate={{ opacity: backSurfaceGlowOpacity }}
-                transition={shouldReduceMotion ? { duration: 0 } : backGlowTransition}
-              />
-            </div>
-          </div>
-          <motion.span
-            className="absolute inset-[2px] z-10 rounded-[18px] bg-[radial-gradient(circle_at_50%_34%,rgba(255,255,255,0.3),rgba(255,255,255,0.12)_32%,rgba(255,255,255,0)_74%)] blur-[14px]"
-            initial={false}
-            animate={{
-              opacity: backGlowOpacity,
-              scale: backGlowScale,
-            }}
-            transition={shouldReduceMotion ? { duration: 0 } : backGlowTransition}
-          />
-          <motion.span
-            className="absolute inset-[1px] z-20 rounded-[19px] bg-[linear-gradient(145deg,rgba(255,255,255,0.14),rgba(255,255,255,0.04)_34%,rgba(0,0,0,0)_68%)]"
-            initial={false}
-            animate={{ opacity: backEdgeGlowOpacity }}
-            transition={shouldReduceMotion ? { duration: 0 } : backGlowTransition}
-          />
-          <motion.span
-            className="absolute inset-0 z-30 rounded-[20px] shadow-[inset_0_0_24px_rgba(255,255,255,0.1),inset_0_0_1px_rgba(255,255,255,0.28)]"
-            initial={false}
-            animate={{ opacity: backEdgeGlowOpacity }}
-            transition={shouldReduceMotion ? { duration: 0 } : backGlowTransition}
-          />
-        </div>
+        <CardBack phase={flipPhase} shouldReduceMotion={shouldReduceMotion} />
       </motion.div>
     </motion.article>
   );
