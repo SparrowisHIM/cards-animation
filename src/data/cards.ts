@@ -5,62 +5,57 @@ export type ProfileCardData = {
   description: string;
   imageSrc: string;
   imageAlt: string;
-  imageClassName?: string;
 };
 
 const withBase = (path: string) =>
   `${import.meta.env.BASE_URL}${path.replace(/^\//, "")}`;
 
-const withStaticVersion = (path: string) => `${withBase(path)}?v=webp-1`;
+const withStaticVersion = (path: string) => `${withBase(path)}?v=work-1`;
 
-export const onePieceCards: ProfileCardData[] = [
+export const workCards: ProfileCardData[] = [
   {
-    id: "robin",
-    role: "Archeologist",
-    name: "Nico Robin",
+    id: "nine41",
+    role: "Open-source tool",
+    name: "nine41",
     description:
-      "Calm, intelligent, and slightly terrifying when needed. Robin has a dark sense of humor and a love for ancient history-and occasionally imagining your gruesome demise mid-conversation. She's elegance with danger quietly built in.",
-    imageSrc: withStaticVersion("/characters/robin.webp"),
-    imageAlt: "Black line illustration of Nico Robin",
-    imageClassName: "h-[214px] w-[190px] translate-y-[-8px]",
+      "A command-line tool that films a website the way it looks on a real device: true 3x iPhone frames under a live status bar, or a Retina laptop with a moving pointer, at 60 fps. I film all my work with it.",
+    imageSrc: withStaticVersion("/work/nine41.webp"),
+    imageAlt: "Mimi Crochet in a MacBook and Ferry in an iPhone, both filmed with nine41",
   },
   {
-    id: "zoro",
-    role: "Vice-Captain",
-    name: "Roronoa Zoro",
+    id: "ferry",
+    role: "Concept bank",
+    name: "Ferry",
     description:
-      "A master of three-sword style who cuts through enemies and occasionally his sense of direction. Zoro lives for strength and loyalty. If he's not training, he's probably sleeping... or lost somewhere he definitely shouldn't be.",
-    imageSrc: withStaticVersion("/characters/zoro.webp"),
-    imageAlt: "Black line illustration of Roronoa Zoro",
-    imageClassName: "h-[214px] w-[190px] translate-y-[-8px]",
+      "A bank on your phone that tells you when your money lands. A payday forecast on Home, money you slide to a person, receipts for everything, and a card that frosts over when you freeze it.",
+    imageSrc: withStaticVersion("/work/ferry.webp"),
+    imageAlt: "Ferry's Home: You're covered until Nov 7, above a balance of $1,486.20",
   },
   {
-    id: "luffy",
-    role: "Captain & Yonko",
-    name: "Monkey D. Luffy",
+    id: "mimi-crochet",
+    role: "Shop & studio",
+    name: "Mimi Crochet",
     description:
-      "Charges headfirst into danger, laughs through chaos, and somehow turns impossible odds into victories. Powered by pure freedom, loyalty, and meat, he's the kind of captain who'd start a war... just to save a friend.",
-    imageSrc: withStaticVersion("/characters/luffy.webp"),
-    imageAlt: "Black line illustration of Monkey D. Luffy",
+      "A website for Mimi's handmade crochet: a shop, custom orders with voice notes, a private page for every order and a studio app for her. It's live and takes real payments.",
+    imageSrc: withStaticVersion("/work/mimi-crochet.webp"),
+    imageAlt: "Mimi Crochet's shop: Crochet pieces worth being seen in, beside a red crochet set",
   },
   {
-    id: "nami",
-    role: "Navigator",
-    name: "Nami",
+    id: "growth-card",
+    role: "Component",
+    name: "GrowthCard",
     description:
-      "A genius navigator with a love for money almost as strong as her love for survival. Nami controls the weather, the crew, and especially their wallets. she'll guide you through any storm... just don't expect it to be free.",
-    imageSrc: withStaticVersion("/characters/nami.webp"),
-    imageAlt: "Black line illustration of Nami",
-    imageClassName: "h-[210px] w-[196px] translate-y-[-6px]",
+      "A growth widget you read by pulling a tape back through the months. It counts up once it scrolls into view, then you drag along the timeline to read any month.",
+    imageSrc: withStaticVersion("/work/growth-card.webp"),
+    imageAlt: "GrowthCard: 10,000 followers over a glowing growth line, with the tape on the left",
   },
   {
-    id: "sanji",
-    role: "Cook",
-    name: "Vinsmoke Sanji",
+    id: "transaction-status",
+    role: "Component",
+    name: "Transaction status",
     description:
-      "A world-class chef who fights with his feet and falls in love every five seconds. Sanji is smooth, dramatic, and dangerously skilled. He'll protect any lady with his life... even if it kills him (and it almost always does).",
-    imageSrc: withStaticVersion("/characters/sanji.webp"),
-    imageAlt: "Black line illustration of Vinsmoke Sanji",
-    imageClassName: "h-[214px] w-[208px] translate-y-[-8px]",
+      "A wallet toast for a token swap where the coins are the progress: when the swap lands, they trade places. It knows a slow network and a swap that fails, too.",
+    imageSrc: withStaticVersion("/work/transaction-status.webp"),
+    imageAlt: "A toast reading Swapped, +185.40 USDC for 0.05 ETH",
   },
 ];

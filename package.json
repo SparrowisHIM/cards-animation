@@ -1,6 +1,6 @@
 {
-  "name": "one-piece-cards",
-  "description": "Animated One Piece character card stack demo built with React, Vite, and Framer Motion.",
+  "name": "card-stack",
+  "description": "A stack of cards you swap, drag, flip and fan out, built with React, Vite and Framer Motion.",
   "private": true,
   "version": "0.0.0",
   "type": "module",

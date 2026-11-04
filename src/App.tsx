@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { FiveCardStack } from "./components/FiveCardStack";
-import { onePieceCards } from "./data/cards";
+import { workCards } from "./data/cards";
 
 const DESKTOP_STAGE_WIDTH = 1560;
 const DESKTOP_STAGE_HEIGHT = 760;
@@ -60,7 +60,7 @@ export default function App() {
           }}
         >
           <FiveCardStack
-            cards={onePieceCards}
+            cards={workCards}
             initialActiveIndex={2}
             isCompactViewport={isCompactViewport}
           />

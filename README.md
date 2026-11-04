@@ -1,6 +1,6 @@
-# One Piece Cards
+# Card stack
 
-Animated One Piece character card stack demo built with React, Vite, Tailwind CSS, and Framer Motion.
+A stack of cards you swap, drag, flip and fan out, built with React, Vite, Tailwind CSS and Framer Motion. The cards hold five pieces of my own work; the point is the interaction, not what is on them.
 
 ## Setup
 
@@ -37,7 +37,7 @@ This project is a Vite static app. Production output is generated into `dist/`, 
 Example PowerShell build for a subpath:
 
 ```powershell
-$env:VITE_BASE_PATH='/one-piece-cards/'
+$env:VITE_BASE_PATH='/card-stack/'
 npm run build
 ```
 

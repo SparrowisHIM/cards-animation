@@ -388,7 +388,7 @@ export function FiveCardStack({
   return (
     <section
       className="relative mx-auto flex h-[760px] w-full items-center justify-center overflow-visible"
-      aria-label="One Piece character card stack"
+      aria-label="Card stack"
       onPointerMoveCapture={() => {
         if (isHoverSuppressed) {
           setIsHoverSuppressed(false);
@@ -1061,7 +1061,7 @@ function ProfileCard({
 
           <div
             className={[
-              "pointer-events-none relative z-20 flex h-[250px] w-[320px] items-start justify-center overflow-hidden rounded-[20px] pt-[33px]",
+              "pointer-events-none relative z-20 h-[250px] w-[320px] overflow-hidden rounded-[20px]",
               isActive ? "bg-[#3f3f3f]" : "bg-[rgba(196,196,196,0.29)]",
             ].join(" ")}
           >
@@ -1069,10 +1069,10 @@ function ProfileCard({
               src={card.imageSrc}
               alt={card.imageAlt}
               className={[
-                "object-contain transition-[filter,opacity,transform] duration-200",
+                "h-full w-full object-cover transition-[filter,opacity] duration-200",
                 isActive
-                  ? ["h-[184px] w-[160px]", card.imageClassName ?? ""].join(" ")
-                  : "h-[184px] w-[160px] grayscale saturate-0 contrast-75 opacity-70 mix-blend-multiply",
+                  ? ""
+                  : "grayscale saturate-0 contrast-75 opacity-70 mix-blend-multiply",
               ].join(" ")}
               draggable={false}
               onError={(event) => {
